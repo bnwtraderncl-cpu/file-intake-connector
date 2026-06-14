@@ -1,4 +1,4 @@
-markdown# File Intake Connector
+# File Intake Connector
 
 A specialized batch operations system for the AFRD (Artifact-First Research and Development) framework. Automates file intake, artifact classification, journal logging, file routing, and batch validation with strict manual-review gates and audit trails.
 
@@ -25,23 +25,18 @@ All operations run in `manual_review` mode — nothing happens automatically. Ev
 - **Google Docs Support** — GDOC-PATCH handles Google Docs by auto-exporting as plain text before parsing
 
 ## Project Structure
+
+```
 file-intake-connector/
-
-├── AFRD_OPS_REGISTERS.gs       # Main spreadsheet with all register tabs and config
-
-├── Phase_3_File_Intake.gs      # Intake script with dry run and suggest-only modes
-
-├── Phase_4_Journal_IDs.gs      # Journal ID assignment with approval gate
-
-├── Phase_5_Apply_Moves.gs      # File movement with approval queue
-
-├── Phase_6_Routing.gs          # Specialist routing and queue building
-
-├── Phase_7_Batch_Closeout.gs   # Batch validation and completion
-
+├── AFRD_OPS_REGISTERS.gs                # Main spreadsheet with all register tabs and config
+├── Phase_3_File_Intake.gs               # Intake script with dry run and suggest-only modes
+├── Phase_4_Journal_IDs.gs               # Journal ID assignment with approval gate
+├── Phase_5_Apply_Moves.gs               # File movement with approval queue
+├── Phase_6_Routing.gs                   # Specialist routing and queue building
+├── Phase_7_Batch_Closeout.gs            # Batch validation and completion
 ├── AFRD_Batch_Operations_Guide_v0_1.md  # Complete operator guide
-
-└── README.md                   # This file
+└── README.md                            # This file
+```
 
 ## Getting Started
 
@@ -54,19 +49,16 @@ file-intake-connector/
 ### Setup
 
 1. Create the AFRD folder structure in Google Drive:
+
+```
 AFRD_ROOT/
-
 ├── 01_STANDARDS/
-
 ├── 02_INBOX/
-
 │   └── 00_New_Uploads/
-
 ├── 03_APPLIED/
-
 ├── 04_JOURNALS/
-
 └── [other specialist folders]
+```
 
 2. Set up AFRD_OPS_REGISTERS spreadsheet with tabs:
    - Config (with folder IDs, mode settings, gates)
@@ -91,58 +83,58 @@ AFRD_ROOT/
 ## Basic Workflow
 
 ### Opening a Batch
+
+```
 startOperationsBatch()                 # Record baseline
-
 dryRunPhase7BatchChecklist()           # Verify clean state
-
 validatePhase7BatchReadiness()         # Validate all settings
+```
 
 ### Processing Files
+
+```
 dryRunFileIntake()                     # Preview intake
-
 runFileIntakeSuggestOnly()             # Write register rows (no moves)
-
 validatePhase3IntakeRows()             # Check quality
+```
 
 ### Assigning Journal IDs
+
+```
 dryRunJournalIdAssignment()            # Preview ID assignment
-
 [CONFIG: Open Phase 4 gate]
-
 runJournalIdAssignmentPilot()          # Assign IDs
-
 [CONFIG: Close Phase 4 gate]
-
 validateJournalIdControl()             # Verify consistency
+```
 
 ### Moving Files
+
+```
 buildManualApplyQueue()                # Create move queue
-
 [SHEET: Approve queue rows in Manual_Apply_Queue]
-
 dryRunApplyApprovedMoves()             # Preview moves
-
 [CONFIG: Open Phase 5 gate]
-
 runApplyApprovedMoves()                # Move files
-
 [CONFIG: Close Phase 5 gate]
+```
 
 ### Routing to Specialists
+
+```
 buildSpecialistQueueRegister()         # Create routing rows
-
 updateSpecialistRoutingDashboard()     # Refresh dashboard
-
 validateSpecialistRoutingDashboard()   # Check routing
+```
 
 ### Closing the Batch
+
+```
 updateOperationsBatchStatus()          # Calculate deltas
-
 validatePhase7BatchCompletion()        # Verify completeness
-
 updateDashboardPhase7()                # Final dashboard update
-
 recordOperationsRunFromInput()         # Log the run
+```
 
 See **AFRD_Batch_Operations_Guide_v0_1.md** for complete step-by-step instructions and troubleshooting.
 
