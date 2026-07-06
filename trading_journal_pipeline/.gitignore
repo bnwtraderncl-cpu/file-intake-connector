@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+data/raw_staging/*
+!data/raw_staging/.gitkeep
+data/processed_archive/*
+!data/processed_archive/.gitkeep
