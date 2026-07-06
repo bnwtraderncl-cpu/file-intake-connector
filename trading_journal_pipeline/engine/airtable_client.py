@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from typing import Any, Dict, Iterable, List, Optional
@@ -6,16 +7,30 @@ from urllib.parse import quote
 import requests
 from dotenv import load_dotenv
 
+logger = logging.getLogger(__name__)
+
 AIRTABLE_API_URL = "https://api.airtable.com/v0"
 MASTER_TRADE_LOG_TABLE = "Table 2: Master Trade Log"
 BULK_BATCH_SIZE = 10  # Airtable's bulk-create limit per request
 RATE_LIMIT_DELAY_SECONDS = 0.2  # stay under Airtable's 5 requests/sec cap
+MAX_RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_BACKOFF_SECONDS = 1.0
 
 # Fields that only apply to crypto trades processed by Lens D (MEXC).
 CRYPTO_ONLY_FIELDS = ("Exchange Fees", "Funding Fees Paid")
 
 
 class AirtableConfigError(RuntimeError):
+    pass
+
+
+class AirtableAuthError(RuntimeError):
+    """Raised when Airtable rejects the request as unauthorized (401)."""
+    pass
+
+
+class AirtableRateLimitError(RuntimeError):
+    """Raised when Airtable's rate limit (429) persists past all retries."""
     pass
 
 
@@ -66,6 +81,33 @@ class AirtableClient:
             "Content-Type": "application/json",
         })
 
+    def _post_batch(self, url: str, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """POST a single batch, retrying on 429 and raising a clear error on 401."""
+        payload = {"records": batch, "typecast": True}
+        attempt = 0
+        while True:
+            attempt += 1
+            response = self.session.post(url, json=payload)
+
+            if response.status_code == 401:
+                raise AirtableAuthError(
+                    "Airtable rejected the request as unauthorized (401) - "
+                    "check that AIRTABLE_PAT is valid and has access to this base."
+                )
+
+            if response.status_code == 429:
+                if attempt > MAX_RATE_LIMIT_RETRIES:
+                    raise AirtableRateLimitError(
+                        f"Airtable rate limit (429) persisted after {MAX_RATE_LIMIT_RETRIES} retries."
+                    )
+                retry_after = float(response.headers.get("Retry-After", RATE_LIMIT_BACKOFF_SECONDS * attempt))
+                logger.warning("Airtable rate limit hit, retrying in %.1fs (attempt %d)", retry_after, attempt)
+                time.sleep(retry_after)
+                continue
+
+            response.raise_for_status()
+            return response.json()
+
     def push_trades(self, trades: List[Dict[str, Any]], is_crypto: bool = False,
                      table: str = MASTER_TRADE_LOG_TABLE,
                      dry_run: bool = False) -> List[Dict[str, Any]]:
@@ -73,17 +115,31 @@ class AirtableClient:
 
         When dry_run=True, no network call is made and the composed record
         payloads are returned as-is for inspection/verification.
+
+        Otherwise, returns one result dict per batch:
+        {"status": "success", "batch_index": i, "response": {...}} or
+        {"status": "error", "batch_index": i, "error": "..."}.
+        A 401 or an exhausted 429 retry budget stops the run early (since
+        every subsequent batch would fail the same way); other per-batch
+        HTTP errors are logged and the run continues with the next batch.
         """
         records = build_airtable_payload(trades, is_crypto)
         if dry_run:
             return records
 
         url = f"{AIRTABLE_API_URL}/{self.base_id}/{quote(table, safe='')}"
-        responses = []
+        results = []
         for i, batch in enumerate(_chunk(records, BULK_BATCH_SIZE)):
             if i > 0:
                 time.sleep(RATE_LIMIT_DELAY_SECONDS)
-            response = self.session.post(url, json={"records": batch, "typecast": True})
-            response.raise_for_status()
-            responses.append(response.json())
-        return responses
+            try:
+                response_json = self._post_batch(url, batch)
+                results.append({"status": "success", "batch_index": i, "response": response_json})
+            except (AirtableAuthError, AirtableRateLimitError) as exc:
+                logger.error("Aborting bulk push at batch %d: %s", i, exc)
+                results.append({"status": "error", "batch_index": i, "error": str(exc)})
+                break
+            except requests.HTTPError as exc:
+                logger.warning("Batch %d failed, continuing with remaining batches: %s", i, exc)
+                results.append({"status": "error", "batch_index": i, "error": str(exc)})
+        return results

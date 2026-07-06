@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.pytest_cache/
 .env
 data/raw_staging/*
 !data/raw_staging/.gitkeep
