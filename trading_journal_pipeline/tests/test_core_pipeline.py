@@ -124,6 +124,10 @@ def test_account_id_is_delivered_as_a_linked_record_array_end_to_end(tmp_path):
     for record in captured["payload"]:
         assert record["fields"]["Account ID"] == ["ATAS_REPLAY_BACKTEST"]
         assert "Exchange Fees" not in record["fields"]  # non-crypto lens: fees stripped, no leak
+        # Internal risk-model calculation columns must never reach the wire.
+        assert "pnl" not in record["fields"]
+        assert "r_multiple" not in record["fields"]
+        assert "model" not in record["fields"]
 
 
 if __name__ == "__main__":

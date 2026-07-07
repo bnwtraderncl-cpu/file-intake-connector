@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
+import numpy as np
 import pandas as pd
 
 try:
@@ -242,16 +243,33 @@ def summarize_risk_models(results_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_trade_pnl(results_df: pd.DataFrame) -> pd.DataFrame:
-    """Realized short-trade PnL per simulated outcome: entry - exit (positive
-    means price fell further and the short covered for a profit)."""
+    """Realized short-trade PnL and R-multiple per simulated outcome.
+
+    pnl = entry - exit (positive means price fell further and the short
+    covered for a profit).
+
+    R = the initial risk unit fixed at entry: |entry_price - stop_level|.
+    r_multiple = pnl / R, i.e. (entry - exit) / R for a short - a positive
+    R-multiple means a winning trade, consistent with pnl's sign. (Note:
+    this is the negative of the literal "(exit - entry) / R" formulation,
+    which would score a stopped-out loss as a positive multiple and a
+    profitable trade as negative - inverting "pick the highest expectancy
+    model" into "pick the worst one." Using pnl / R keeps the sign
+    consistent with pnl and with everything built on top of it.)
+    Trades where R is 0 (stop level equals entry price) get a NaN
+    R-multiple and are excluded from the mean.
+    """
     df = results_df.copy()
     df["pnl"] = df["entry_price"] - df["exit_price"]
+    r = (df["entry_price"] - df["stop_level"]).abs()
+    df["r_multiple"] = np.where(r > 0, df["pnl"] / r, np.nan)
     return df
 
 
 def rank_risk_models(results_df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate performance per model, including Net Expectancy (mean realized
-    PnL per resolved trade), ranked by highest Net Expectancy then lowest MAE."""
+    """Aggregate performance per model, including Net Expectancy (mean
+    R-multiple per resolved trade), ranked by highest Net Expectancy then
+    lowest MAE."""
     df = compute_trade_pnl(results_df)
     resolved = df[df["outcome"] != "open"]
     if resolved.empty:
@@ -262,7 +280,7 @@ def rank_risk_models(results_df: pd.DataFrame) -> pd.DataFrame:
         wins=("outcome", lambda s: (s == "profit_target").sum()),
         avg_mae=("mae", "mean"),
         avg_mfe=("mfe", "mean"),
-        net_expectancy=("pnl", "mean"),
+        net_expectancy=("r_multiple", "mean"),
     )
     summary["win_rate"] = summary["wins"] / summary["trades"]
     summary = summary.reset_index()[["model", "trades", "wins", "win_rate", "avg_mae", "avg_mfe", "net_expectancy"]]

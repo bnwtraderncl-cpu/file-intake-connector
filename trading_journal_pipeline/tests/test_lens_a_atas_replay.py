@@ -28,7 +28,10 @@ def test_normalize_to_schema_returns_only_the_clean_standard_columns():
 
     assert list(df.columns) == list(STANDARD_COLUMNS)
     # No leaked internal simulation columns (model, mae, mfe, stop_level, outcome, ...).
-    leaked = {"model", "mae", "mfe", "stop_level", "outcome", "profit_target", "signal_index", "entry_variant"}
+    leaked = {
+        "model", "mae", "mfe", "stop_level", "outcome", "profit_target",
+        "signal_index", "entry_variant", "pnl", "r_multiple",
+    }
     assert leaked.isdisjoint(set(df.columns))
 
 

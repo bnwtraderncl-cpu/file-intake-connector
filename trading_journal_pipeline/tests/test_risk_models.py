@@ -192,29 +192,45 @@ def test_summary_reports_equal_win_rate_but_differentiated_mae():
 
 def test_compute_trade_pnl_is_entry_minus_exit_for_a_short():
     df = pd.DataFrame([
-        {"entry_price": 100.0, "exit_price": 90.0},   # price fell -> short profit
-        {"entry_price": 100.0, "exit_price": 105.0},  # price rose -> short loss
+        {"entry_price": 100.0, "exit_price": 90.0, "stop_level": 110.0},   # price fell -> short profit
+        {"entry_price": 100.0, "exit_price": 105.0, "stop_level": 105.0},  # price rose -> short loss
     ])
     out = compute_trade_pnl(df)
     assert out["pnl"].tolist() == pytest.approx([10.0, -5.0])
+
+
+def test_compute_trade_pnl_r_multiple_is_pnl_over_initial_risk():
+    df = pd.DataFrame([
+        {"entry_price": 100.0, "exit_price": 90.0, "stop_level": 105.0},  # R=5, pnl=+10 -> +2R
+        {"entry_price": 100.0, "exit_price": 105.0, "stop_level": 105.0},  # R=5, pnl=-5 -> -1R
+    ])
+    out = compute_trade_pnl(df)
+    assert out["r_multiple"].tolist() == pytest.approx([2.0, -1.0])
+
+
+def test_compute_trade_pnl_r_multiple_is_nan_when_risk_is_zero():
+    df = pd.DataFrame([{"entry_price": 100.0, "exit_price": 95.0, "stop_level": 100.0}])
+    out = compute_trade_pnl(df)
+    assert pd.isna(out["r_multiple"].iloc[0])
 
 
 def test_rank_risk_models_orders_by_net_expectancy_then_mae():
     out = run_full_risk_pipeline(RISK_CHART_PATH, RISK_TAPE_PATH)
     ranked = rank_risk_models(out["results"])
 
-    assert list(ranked["model"]) == ["model_3_tape", "model_2A", "model_1_atr", "model_2B", "model_2C"]
+    assert list(ranked["model"]) == ["model_2A", "model_2B", "model_3_tape", "model_1_atr", "model_2C"]
     assert ranked["net_expectancy"].is_monotonic_decreasing
 
 
 def test_select_winning_model_picks_highest_net_expectancy():
     out = run_full_risk_pipeline(RISK_CHART_PATH, RISK_TAPE_PATH)
-    assert select_winning_model(out["results"]) == "model_3_tape"
+    assert select_winning_model(out["results"]) == "model_2A"
 
 
 def test_select_winning_model_raises_when_nothing_resolved():
     unresolved = pd.DataFrame([
-        {"model": "model_1_atr", "entry_price": 100.0, "exit_price": None, "outcome": "open", "mae": 0.0, "mfe": 0.0},
+        {"model": "model_1_atr", "entry_price": 100.0, "exit_price": None, "stop_level": 110.0,
+         "outcome": "open", "mae": 0.0, "mfe": 0.0},
     ])
     with pytest.raises(ValueError):
         select_winning_model(unresolved)
