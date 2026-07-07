@@ -9,9 +9,12 @@ import pytest
 from engine.risk_models import (
     calculate_atr,
     compute_stop_levels,
+    compute_trade_pnl,
     detect_aggressive_buy_cluster,
     load_tape_fixture,
+    rank_risk_models,
     run_full_risk_pipeline,
+    select_winning_model,
     simulate_static_stop_model,
 )
 
@@ -181,6 +184,40 @@ def test_summary_reports_equal_win_rate_but_differentiated_mae():
     # of comparing risk models with an identical win rate.
     assert summary.at["model_3_tape", "avg_mae"] < summary.at["model_2A", "avg_mae"]
     assert summary.at["model_2A", "avg_mae"] < summary.at["model_1_atr", "avg_mae"]
+
+
+# ---------------------------------------------------------------------------
+# Net Expectancy ranking / winning model selection
+# ---------------------------------------------------------------------------
+
+def test_compute_trade_pnl_is_entry_minus_exit_for_a_short():
+    df = pd.DataFrame([
+        {"entry_price": 100.0, "exit_price": 90.0},   # price fell -> short profit
+        {"entry_price": 100.0, "exit_price": 105.0},  # price rose -> short loss
+    ])
+    out = compute_trade_pnl(df)
+    assert out["pnl"].tolist() == pytest.approx([10.0, -5.0])
+
+
+def test_rank_risk_models_orders_by_net_expectancy_then_mae():
+    out = run_full_risk_pipeline(RISK_CHART_PATH, RISK_TAPE_PATH)
+    ranked = rank_risk_models(out["results"])
+
+    assert list(ranked["model"]) == ["model_3_tape", "model_2A", "model_1_atr", "model_2B", "model_2C"]
+    assert ranked["net_expectancy"].is_monotonic_decreasing
+
+
+def test_select_winning_model_picks_highest_net_expectancy():
+    out = run_full_risk_pipeline(RISK_CHART_PATH, RISK_TAPE_PATH)
+    assert select_winning_model(out["results"]) == "model_3_tape"
+
+
+def test_select_winning_model_raises_when_nothing_resolved():
+    unresolved = pd.DataFrame([
+        {"model": "model_1_atr", "entry_price": 100.0, "exit_price": None, "outcome": "open", "mae": 0.0, "mfe": 0.0},
+    ])
+    with pytest.raises(ValueError):
+        select_winning_model(unresolved)
 
 
 if __name__ == "__main__":

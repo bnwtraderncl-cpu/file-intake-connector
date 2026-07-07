@@ -19,6 +19,11 @@ RATE_LIMIT_BACKOFF_SECONDS = 1.0
 # Fields that only apply to crypto trades processed by Lens D (MEXC).
 CRYPTO_ONLY_FIELDS = ("Exchange Fees", "Funding Fees Paid")
 
+# Fields that are "Link to another record" columns in Airtable. The API
+# expects these as an array; with typecast=True (set on every POST below),
+# Airtable matches/creates a linked record by its primary field value.
+LINKED_RECORD_FIELDS = ("Account ID",)
+
 
 class AirtableConfigError(RuntimeError):
     pass
@@ -48,12 +53,19 @@ def load_airtable_config(env_path: Optional[str] = None) -> Dict[str, str]:
 
 def build_trade_fields(trade: Dict[str, Any], is_crypto: bool) -> Dict[str, Any]:
     """Safety-check map: crypto-only fields (Exchange Fees, Funding Fees Paid)
-    are only appended when the record comes from a crypto (Lens D) source."""
+    are only appended when the record comes from a crypto (Lens D) source.
+    Linked-record fields (e.g. Account ID) are wrapped into a single-element
+    array to match Airtable's "Link to another record" field format."""
     fields = {key: value for key, value in trade.items() if key not in CRYPTO_ONLY_FIELDS}
     if is_crypto:
         for key in CRYPTO_ONLY_FIELDS:
             if key in trade:
                 fields[key] = trade[key]
+
+    for key in LINKED_RECORD_FIELDS:
+        if key in fields and not isinstance(fields[key], list):
+            fields[key] = [fields[key]]
+
     return fields
 
 

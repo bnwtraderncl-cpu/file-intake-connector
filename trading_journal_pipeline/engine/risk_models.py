@@ -241,6 +241,42 @@ def summarize_risk_models(results_df: pd.DataFrame) -> pd.DataFrame:
     return summary.reset_index()[["model", "trades", "wins", "win_rate", "avg_mae", "avg_mfe"]]
 
 
+def compute_trade_pnl(results_df: pd.DataFrame) -> pd.DataFrame:
+    """Realized short-trade PnL per simulated outcome: entry - exit (positive
+    means price fell further and the short covered for a profit)."""
+    df = results_df.copy()
+    df["pnl"] = df["entry_price"] - df["exit_price"]
+    return df
+
+
+def rank_risk_models(results_df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate performance per model, including Net Expectancy (mean realized
+    PnL per resolved trade), ranked by highest Net Expectancy then lowest MAE."""
+    df = compute_trade_pnl(results_df)
+    resolved = df[df["outcome"] != "open"]
+    if resolved.empty:
+        return pd.DataFrame(columns=["model", "trades", "wins", "win_rate", "avg_mae", "avg_mfe", "net_expectancy"])
+
+    summary = resolved.groupby("model").agg(
+        trades=("outcome", "count"),
+        wins=("outcome", lambda s: (s == "profit_target").sum()),
+        avg_mae=("mae", "mean"),
+        avg_mfe=("mfe", "mean"),
+        net_expectancy=("pnl", "mean"),
+    )
+    summary["win_rate"] = summary["wins"] / summary["trades"]
+    summary = summary.reset_index()[["model", "trades", "wins", "win_rate", "avg_mae", "avg_mfe", "net_expectancy"]]
+    return summary.sort_values(["net_expectancy", "avg_mae"], ascending=[False, True]).reset_index(drop=True)
+
+
+def select_winning_model(results_df: pd.DataFrame) -> str:
+    """The model with the highest Net Expectancy; ties broken by lowest avg MAE."""
+    ranked = rank_risk_models(results_df)
+    if ranked.empty:
+        raise ValueError("No resolved trades to select a winning risk model from.")
+    return ranked.iloc[0]["model"]
+
+
 def run_full_risk_pipeline(chart_path: Union[str, Path], tape_path: Optional[Union[str, Path]] = None) -> Dict[str, pd.DataFrame]:
     vwap_result = run_vwap_vector_analysis(chart_path)
     tape_df = load_tape_fixture(tape_path) if tape_path else None
